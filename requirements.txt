@@ -1,0 +1,5 @@
+bonsai-cli
+bonsai-python
+numpy
+plotly
+
