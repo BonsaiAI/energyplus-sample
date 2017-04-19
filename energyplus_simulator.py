@@ -1,13 +1,12 @@
-#!/usr/bin/env python
+# ! /Library/Frameworks/Python.framework/Versions/3.5/bin/python3
 
 # for client launching
 import socket
-import subprocess, shlex
-import xml.etree.ElementTree as et # for XML server.cfg reading
+import subprocess
 import argparse
 
-import logging
-import sys
+import os
+import platform
 
 # for graphing
 import plotly.offline as py
@@ -22,8 +21,36 @@ MAINVERSION = 2 # from defines.h
 host = "localhost"
 port = 0
 
-# base class for simulation models
+
+def get_host():
+    if platform.system() == "Windows":
+        return ""
+    else:
+        return socket.gethostbyname(socket.gethostname())
+
+def check_environ_vars():
+    if not os.path.exists(get_cclient_path()):
+        raise RuntimeError("cclient not found. Check the BCVTB_CCLIENT_PATH environment variable.")
+    if not os.path.exists(get_energyplus_path()):
+        raise RuntimeError("energyplus not found. Check the ENERGYPLUS_BIN environment variable.")
+
+def get_cclient_path():
+    """ Get the path to the CCLIENT binary distributed with BCVTB. You can set this as environment variable,
+        BCVTB_CCLIENT_BIN, before running this program.
+    """
+    if "BCVTB_CCLIENT_BIN" in os.environ:
+        return os.environ["BCVTB_CCLIENT_BIN"]
+    elif platform.system() == "Windows":
+        return "C:\\bcvtb\\examples\\c-room\\"
+    else:
+        return "./"
+
+def get_energyplus_path():
+    return os.environ["ENERGYPLUS_BIN"]
+
 class Model(object):
+    """ Base class for simulation models
+    """
     currentSimTime, exitFlag = 0., 1
     fromClient = None
     process = None
@@ -55,22 +82,20 @@ class Model(object):
 
 
 class PtolemyServer(object):
-    hostname = "localhost"
+    hostname = get_host()
+
     def __init__(self, model):
         # read the config file in, the client will be using this to connect
         # config = et.parse("./socket.cfg").getroot().find('ipc').find('socket')
-        #host = socket.gethostbyname(socket.gethostname())
-        host = ""
 
         # start parameters
-        self.server_address = (host, 0) # get new random port number
+        self.server_address = (self.hostname, 0) # get new random port number
         self.model = model
 
         # open and setup the socket
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1) # 1 == true
         self.sock.setblocking(True)
-        return
 
     def start(self):
         self.sock.bind( self.server_address )
@@ -78,22 +103,22 @@ class PtolemyServer(object):
 
         # write new config so client will connect to our port
         new_port = self.sock.getsockname()[1]
-        socket_cfg_str = \
-            "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n" \
-            "<BCVTB-client>\n" \
-             " <ipc>\n" \
-            "    <socket port=\"" + str(new_port) + "\" hostname=\"{hostname}\"/>\n" \
-            "  </ipc>\n" \
-            "</BCVTB-client>\n".format(hostname=self.hostname)
+        socket_cfg_str = (
+            "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n"
+            "<BCVTB-client>\n"
+            " <ipc>\n"
+            "    <socket port=\"{port}\" hostname=\"{hostname}\"/>\n"
+            "  </ipc>\n"
+            "</BCVTB-client>\n").format(hostname=self.hostname, port=new_port)
 
         try:
             config_file = open("socket.cfg", "w")
             config_file.write(socket_cfg_str)
             config_file.close()
         except OSError as msg:
-            print("PtolemyServer: error writing socket.cfg: " + str(msg))
+            print("PtolemyServer: error writing socket.cfg:", msg)
 
-        print("PtolemyServer: server listening on " + self.server_address[0] + ":" + str(new_port) )
+        print("PtolemyServer: server listening on {0}:{1}".format(self.server_address[0], new_port))
 
         # start the model now...
         self.model.start()
@@ -102,14 +127,12 @@ class PtolemyServer(object):
     def waitForClient(self):
         print("PtolemyServer: waiting for client...")
         self.conn, self.address = self.sock.accept()
-        print("PtolemyServer: got a connection from:" + str(self.address))
-        return
-
+        print("PtolemyServer: got a connection from:", self.address)
 
     def readFromClient(self):
         buffer = self.conn.recv(4096).decode('ascii')
         params = buffer.split()
-        # print("PtolemyServer: recv " + buffer)
+        # print("PtolemyServer recv:", buffer)
 
         self.model.exitFlag = 1    # exit if no params received
         if len(params) >= 2:
@@ -122,8 +145,8 @@ class PtolemyServer(object):
                     
                     # parse the remainder
                     clientDoubleCount = int(params[2])
-                    clientIntCount = int(params[3])
-                    clientBoolCount = int(params[4])
+                    #clientIntCount = int(params[3])
+                    #clientBoolCount = int(params[4])
                     currentSimTime = float(params[5])
                     fromClient = []
                     for n in range(clientDoubleCount):
@@ -133,7 +156,7 @@ class PtolemyServer(object):
                     self.model.fromClient = fromClient
                     self.model.currentSimTime = currentSimTime
 
-                    print("PtolemyServer: recv " + str(fromClient))
+                    print("PtolemyServer recv:", fromClient)
                 else:
                     print("PtolemyServer: got exit request")
             else:
@@ -158,7 +181,7 @@ class PtolemyServer(object):
             response = "{0:d} {1:d}\n".format(MAINVERSION, self.model.exitFlag)
 
         # write the response
-        print("PtolemyServer: send " + str(responseDoubles))
+        print("PtolemyServer send:", responseDoubles)
         self.conn.sendall(response.encode('ascii'))
         return
 
@@ -168,21 +191,22 @@ class PtolemyServer(object):
             self.model.stop()
             print("PtolemyServer: terminate model process")
         except OSError as msg:
-            print("PtolemyServer: error closing model process: " + str(msg))
+            print("PtolemyServer: error closing model process:", msg)
 
         try:
             self.sock.shutdown(socket.SHUT_RDWR)
             self.sock.close()
             print("PtolemyServer: closed")
         except OSError as msg:
-            print("PtolemyServer: error on close: " + str(msg))
+            print("PtolemyServer: error on close:", msg)
 
         return
 
 
 # croom model
 class CRoom(Model):
-    cclient_path = "C:\\bcvtb\\examples\\c-room\\cclient.exe"
+    cclient_path = os.path.join(get_cclient_path(), "cclient.exe" if platform.system() == "Windows" else "cclient")
+
     def __init__(self):
         Model.__init__(self, "{0} 60".format(self.cclient_path))
 
@@ -225,9 +249,11 @@ class CRoom(Model):
 
 # eplus85-actuator model
 class ePlus85Actuator(Model):
-    energyplus_path = "C:\\EnergyPlusV8-6-0\\energyplus.exe"
+    energyplus = os.path.join(get_energyplus_path(),
+                              "energyplus.exe" if platform.system() == "Windows" else "energyplus")
+
     def __init__(self):
-        Model.__init__(self, "{0} -w ./ePlusWeather/USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.epw -p output -s C -x -m -r EMSWindowShadeControl.idf".format(self.energyplus_path))
+        Model.__init__(self, "{0} -w ./ePlusWeather/USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.epw -p output -s C -x -m -r EMSWindowShadeControl.idf".format(self.energyplus))
 
         # we expect 4 doubles from the client
         self.data = ([],[],[],[],[])
@@ -270,7 +296,7 @@ def write_graph(graph):
         config_file.write(output_html)
         config_file.close()
     except OSError as msg:
-        print("PtolemyServer: error writing graph.html: " + str(msg))
+        print("PtolemyServer: error writing graph.html:", msg)
     pass
 
 def test_model( model ):
@@ -382,7 +408,7 @@ class EnergyPlusSimulator(Simulator):
             self.readFromPtolemyClient()
 
         except OSError as msg:
-            print("EnergyPlusSimulator: error on restart: "  + str(msg))
+            print("EnergyPlusSimulator: error on restart:", msg)
             self.server = None
         pass
 
@@ -400,7 +426,7 @@ class EnergyPlusSimulator(Simulator):
 
 
     def advance(self, actions):
-        print("EnergyPlusSimulator: advance " + str(actions))
+        print("EnergyPlusSimulator: advance ", actions)
         """Advance the simulation forward one tick. actions contains a
            dictionary of key values as defined by this simulator's action
            schema in Inkling.
@@ -423,7 +449,7 @@ class EnergyPlusSimulator(Simulator):
 
 
     def get_state(self):
-        print("EnergyPlusSimulator: get_state: terminal:" + str(self.is_terminal))
+        print("EnergyPlusSimulator: get_state: terminal:", self.is_terminal)
 
         """Returns a named tuple of state and is_terminal. state is a
            dictionary matching the state schema as defined in Inkling.
@@ -473,7 +499,7 @@ class EnergyPlusSimulator(Simulator):
             
             self.model.data[4].append(reward)
         
-        print("EnergyPlusSimulator: reward " + str(reward))
+        print("EnergyPlusSimulator reward:", reward)
         return reward
 
 
