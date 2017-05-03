@@ -1,4 +1,4 @@
-# ! /Library/Frameworks/Python.framework/Versions/3.5/bin/python3
+#!/usr/bin/env python
 
 # for client launching
 import socket
@@ -6,6 +6,7 @@ import subprocess
 import argparse
 
 import os
+from os.path import exists, join
 import platform
 
 # for graphing
@@ -17,7 +18,7 @@ import numpy as np
 from bonsai import Simulator, run_for_training_or_prediction
 from bonsai.simulator import SimState
 
-MAINVERSION = 2 # from defines.h
+MAINVERSION = 2  # from defines.h
 host = "localhost"
 port = 0
 
@@ -28,15 +29,24 @@ def get_host():
     else:
         return socket.gethostbyname(socket.gethostname())
 
+
 def check_environ_vars():
     if not os.path.exists(get_cclient_path()):
-        raise RuntimeError("cclient not found. Check the BCVTB_CCLIENT_PATH environment variable.")
+        raise RuntimeError("cclient not found. Check the BCVTB_CCLIENT_PATH "
+                           "environment variable.")
     if not os.path.exists(get_energyplus_path()):
-        raise RuntimeError("energyplus not found. Check the ENERGYPLUS_BIN environment variable.")
+        raise RuntimeError("energyplus not found. Check the ENERGYPLUS_BIN "
+                           "environment variable.")
+
+
+def get_bcvtb_path():
+    return os.environ["BCVTB_HOME"]
+
 
 def get_cclient_path():
-    """ Get the path to the CCLIENT binary distributed with BCVTB. You can set this as environment variable,
-        BCVTB_CCLIENT_BIN, before running this program.
+    """ Get the path to the CCLIENT binary distributed with BCVTB. You can set
+        this as environment variable, BCVTB_CCLIENT_BIN, before running this 
+        program.
     """
     if "BCVTB_CCLIENT_BIN" in os.environ:
         return os.environ["BCVTB_CCLIENT_BIN"]
@@ -45,25 +55,27 @@ def get_cclient_path():
     else:
         return "./"
 
+
 def get_energyplus_path():
     return os.environ["ENERGYPLUS_BIN"]
+
 
 class Model(object):
     """ Base class for simulation models
     """
-    currentSimTime, exitFlag = 0., 1
-    fromClient = None
-    process = None
 
     def __init__(self, shellCmd):
+        self.currentSimTime = 0.
+        self.exitFlag = 0.
+        self.process = None
+        self.fromClient = None
         self.shellCmd = shellCmd
-        return
 
     def controller(self):
         return [0.]
 
     def grapher(self):
-        return
+        pass
 
     def start(self):
         # must have
@@ -73,32 +85,31 @@ class Model(object):
         self.exitFlag = 0
         self.fromClient = None
         self.process = subprocess.Popen(self.shellCmd, shell=True)
-        pass
 
     def stop(self):
         self.process.terminate()
         self.exitFlag = 1   # because well, we're exited
-        pass
 
 
 class PtolemyServer(object):
     hostname = get_host()
 
     def __init__(self, model):
-        # read the config file in, the client will be using this to connect
-        # config = et.parse("./socket.cfg").getroot().find('ipc').find('socket')
 
         # start parameters
-        self.server_address = (self.hostname, 0) # get new random port number
+        self.server_address = (self.hostname, 0)  # get new random port number
         self.model = model
 
         # open and setup the socket
+        socket_true = 1
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1) # 1 == true
+        self.sock.setsockopt(socket.SOL_SOCKET,
+                             socket.SO_KEEPALIVE,
+                             socket_true)
         self.sock.setblocking(True)
 
     def start(self):
-        self.sock.bind( self.server_address )
+        self.sock.bind(self.server_address)
         self.sock.listen(1)
 
         # write new config so client will connect to our port
@@ -118,11 +129,12 @@ class PtolemyServer(object):
         except OSError as msg:
             print("PtolemyServer: error writing socket.cfg:", msg)
 
-        print("PtolemyServer: server listening on {0}:{1}".format(self.server_address[0], new_port))
+        print(("PtolemyServer: "
+               "server listening on {0}:{1}").format(self.server_address[0],
+                                                     new_port))
 
         # start the model now...
         self.model.start()
-        return
 
     def waitForClient(self):
         print("PtolemyServer: waiting for client...")
@@ -142,15 +154,15 @@ class PtolemyServer(object):
 
                 # if the exit flag hasn't been sent, read the rest
                 if self.model.exitFlag == 0:
-                    
+
                     # parse the remainder
                     clientDoubleCount = int(params[2])
-                    #clientIntCount = int(params[3])
-                    #clientBoolCount = int(params[4])
+                    # clientIntCount = int(params[3])
+                    # clientBoolCount = int(params[4])
                     currentSimTime = float(params[5])
                     fromClient = []
                     for n in range(clientDoubleCount):
-                        fromClient.append( float(params[6+n]) )
+                        fromClient.append(float(params[6+n]))
 
                     # run the controller
                     self.model.fromClient = fromClient
@@ -164,16 +176,19 @@ class PtolemyServer(object):
         else:
             print("PtolemyServer: ERROR: not enough ptolemy packet variables")
 
-        return
-
-    def writeToClient(self, responseDoubles ):
+    def writeToClient(self, responseDoubles):
         if self.model.exitFlag == 0:
             # compose a response
             responseDoubleCount = len(responseDoubles)
             responseIntCount = 0
             responseBoolCount = 0
-            response = "{0:d} {1:d} {2:d} {3:d} {4:d} {5:g} " \
-                .format(MAINVERSION, self.model.exitFlag, responseDoubleCount, responseIntCount, responseBoolCount, self.model.currentSimTime)
+            response = "{0:d} {1:d} {2:d} {3:d} {4:d} {5:g} ".format(
+                                                     MAINVERSION,
+                                                     self.model.exitFlag,
+                                                     responseDoubleCount,
+                                                     responseIntCount,
+                                                     responseBoolCount,
+                                                     self.model.currentSimTime)
             for d in responseDoubles:
                 response += "{0:g} ".format(d)
             response += "\n"
@@ -183,8 +198,6 @@ class PtolemyServer(object):
         # write the response
         print("PtolemyServer send:", responseDoubles)
         self.conn.sendall(response.encode('ascii'))
-        return
-
 
     def close(self):
         try:
@@ -200,29 +213,30 @@ class PtolemyServer(object):
         except OSError as msg:
             print("PtolemyServer: error on close:", msg)
 
-        return
 
-
-# croom model
 class CRoom(Model):
-    cclient_path = os.path.join(get_cclient_path(), "cclient.exe" if platform.system() == "Windows" else "cclient")
+    cclient_path = os.path.join(get_cclient_path(),
+                                ("cclient.exe"
+                                 if platform.system() == "Windows"
+                                 else "cclient"))
 
     def __init__(self):
         Model.__init__(self, "{0} 60".format(self.cclient_path))
 
         # we expect 4 doubles from the client
-        self.data = ([],[],[],[])
+        self.data = ([], [], [], [])
 
         # model variables from the the bcvtb example `c-room`
-        self.Kp = [1.,7.5]      # this one is originally represented as a matrix, but we don't need to do that here
+        # Kp is originally represented as a matrix, but we don't need to do 
+        # that here
+        self.Kp = [1., 7.5]
         self.TSet = [18., 20.]
-        self.yIni = [0.,0.]
-        return
+        self.yIni = [0., 0.]
 
     def controller(self):
         # ripple the sample delay
         response = self.yIni
-        
+
         # control
         values = self.yIni   # so sizes match
         for n in range(2):
@@ -239,28 +253,51 @@ class CRoom(Model):
         return response
 
     def grapher(self):
-        xAxis = np.linspace(0, self.currentSimTime, num=len(self.data[0]), endpoint=False)
-        trace0 = go.Scatter(x=xAxis, y=self.data[0], mode='lines', name='TRoom1')
-        trace1 = go.Scatter(x=xAxis, y=self.data[1], mode='lines', name='TRoom2')
-        trace2 = go.Scatter(x=xAxis, y=self.data[2], mode='lines', name='10*y1')
-        trace3 = go.Scatter(x=xAxis, y=self.data[3], mode='lines', name='10*y2')
+        xAxis = np.linspace(0,
+                            self.currentSimTime,
+                            num=len(self.data[0]),
+                            endpoint=False)
+        trace0 = go.Scatter(x=xAxis,
+                            y=self.data[0],
+                            mode='lines',
+                            name='TRoom1')
+        trace1 = go.Scatter(x=xAxis,
+                            y=self.data[1],
+                            mode='lines',
+                            name='TRoom2')
+        trace2 = go.Scatter(x=xAxis,
+                            y=self.data[2],
+                            mode='lines',
+                            name='10*y1')
+        trace3 = go.Scatter(x=xAxis,
+                            y=self.data[3],
+                            mode='lines', 
+                            name='10*y2')
         return [trace0, trace1, trace2, trace3]
 
 
-# eplus85-actuator model
 class ePlus85Actuator(Model):
-    energyplus = os.path.join(get_energyplus_path(),
-                              "energyplus.exe" if platform.system() == "Windows" else "energyplus")
+    """ Eplus85-actuator model """
+    energyplus = join(get_energyplus_path(),
+                      "energyplus.exe" if platform.system() == "Windows"
+                      else "energyplus")
+    weather = join(get_bcvtb_path(),
+                   "examples/ePlusWeather/"
+                   "USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.epw")
+    datafile = "EMSWindowShadeControl.idf"
 
     def __init__(self):
-        Model.__init__(self, "{0} -w ./ePlusWeather/USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.epw -p output -s C -x -m -r EMSWindowShadeControl.idf".format(self.energyplus))
+        Model.__init__(self,
+                       "{energyplus} -w {weather} -p output -s C -x -m "
+                       "-r {datafile}".format(energyplus=self.energyplus,
+                                              weather=self.weather,
+                                              datafile=self.datafile))
 
         # we expect 4 doubles from the client
-        self.data = ([],[],[],[],[])
+        self.data = ([], [], [], [], [])
 
         # model variables from the the bcvtb example `eplus85-actuator`
         self.yShade = 6.  # 0 or 6
-        return
 
     def controller(self):
         # save the client input in our graph
@@ -268,7 +305,7 @@ class ePlus85Actuator(Model):
             value = self.fromClient[n]
 
             # scale some of the values for readability
-            if n==2:
+            if n == 2:
                 value /= 100.
 
             self.data[n].append(value)
@@ -277,19 +314,37 @@ class ePlus85Actuator(Model):
         return [self.yShade]
 
     def grapher(self):
-        xAxis = np.linspace(0, self.currentSimTime, num=len(self.data[0]), endpoint=False)
+        xAxis = np.linspace(0,
+                            self.currentSimTime,
+                            num=len(self.data[0]),
+                            endpoint=False)
         trace0 = go.Scatter(x=xAxis, y=self.data[0], mode='lines', name='TOut')
-        trace1 = go.Scatter(x=xAxis, y=self.data[1], mode='lines', name='TZone')
-        trace2 = go.Scatter(x=xAxis, y=self.data[2], mode='lines', name='SolarIrradiation/100')
-        trace3 = go.Scatter(x=xAxis, y=self.data[3], mode='lines', name='FractionShadingOn')
-        trace4 = go.Scatter(x=xAxis, y=self.data[4], mode='lines', name='Reward')
+        trace1 = go.Scatter(x=xAxis,
+                            y=self.data[1],
+                            mode='lines',
+                            name='TZone')
+        trace2 = go.Scatter(x=xAxis,
+                            y=self.data[2],
+                            mode='lines',
+                            name='SolarIrradiation/100')
+        trace3 = go.Scatter(x=xAxis,
+                            y=self.data[3],
+                            mode='lines',
+                            name='FractionShadingOn')
+        trace4 = go.Scatter(x=xAxis,
+                            y=self.data[4],
+                            mode='lines',
+                            name='Reward')
         return [trace0, trace1, trace2, trace3, trace4]
 
 
 def write_graph(graph):
-    #py.plot(graph, filename='graph.html', auto_open=False)
+
     div = py.plot(graph, auto_open=False, output_type='div', show_link=False)
-    output_html = "<html><head><META HTTP-EQUIV=\"refresh\" CONTENT=\"5\"></head><body>" + div + "</body>"
+    output_html = ("<html>"
+                   "<head><META HTTP-EQUIV=\"refresh\" CONTENT=\"5\"></head>"
+                   "<body>{0}</body>"
+                   "</html>").format(div)
     try:
 
         config_file = open("graph.html", "w")
@@ -297,10 +352,10 @@ def write_graph(graph):
         config_file.close()
     except OSError as msg:
         print("PtolemyServer: error writing graph.html:", msg)
-    pass
 
-def test_model( model ):
-    
+
+def test_model(model):
+
     for runs in range(4):
         # launch the client...
         server = PtolemyServer(model)
@@ -319,10 +374,6 @@ def test_model( model ):
         while model.exitFlag == 0:
             n += 1
 
-            # test terminate early
-            # if n > 100:
-            #     break
-
             try:
                 response = model.controller()
                 server.writeToClient(response)
@@ -338,63 +389,56 @@ def test_model( model ):
         graph = model.grapher()
         write_graph(graph)
 
-    pass
-
 
 class EnergyPlusSimulator(Simulator):
     model = ePlus85Actuator()
     server = None
-    
-    #clientState = { 'TOut': 0., 'TZone': 0., 'SolarIrradiation': 0., 'FractionShadingOn': 0. }
-    clientState = { 'SolarIrradiation': 0 }
+
+    clientState = {'SolarIrradiation': 0}
     shade = 0.
     is_terminal = True
 
     def start(self):
-        print("EnergyPlusSimulator: start")
         """This method is called when training is started."""
-        pass
-
+        print("EnergyPlusSimulator: start")
 
     def stop(self):
         print("EnergyPlusSimulator: stop")
 
         graph = self.model.grapher()
         py.plot(graph, filename="graph.html")
-        pass
-
 
     def readFromPtolemyClient(self):
         self.server.readFromClient()
-        if self.model.fromClient!=None and len(self.model.fromClient)==4:
+        if self.model.fromClient and len(self.model.fromClient) == 4:
             self.clientState = {
-                #'TOut': self.model.fromClient[0],
-                #'TZone': self.model.fromClient[1],
+                # 'TOut': self.model.fromClient[0],
+                # 'TZone': self.model.fromClient[1],
                 'SolarIrradiation': int(self.model.fromClient[2])/100
-                #'FractionShadingOn': self.model.fromClient[3]
+                # 'FractionShadingOn': self.model.fromClient[3]
                 }
 
             # save the client input in our graph
             for n in range(len(self.model.fromClient)):
                 value = self.model.fromClient[n]
                 # scale some of the values for readability
-                if n==2:
+                if n == 2:
                     value /= 100.
                 self.model.data[n].append(value)
 
-
-        self.is_terminal = self.model.exitFlag!=0
-        pass
-
+        self.is_terminal = self.model.exitFlag != 0
 
     def restartPtolemyServer(self):
         # set some default values for get_state
         self.is_terminal = True
-        #self.clientState = { 'TOut': 0., 'TZone': 0., 'SolarIrradiation': 0., 'FractionShadingOn': 0. }
-        self.clientState = { 'SolarIrradiation': 0 }
+        # self.clientState = {'TOut': 0.,
+        #                     'TZone': 0.,
+        #                     'SolarIrradiation': 0.,
+        #                     'FractionShadingOn': 0. }
+        self.clientState = {'SolarIrradiation': 0}
 
         # close the old connections if they're still open
-        if self.server != None:
+        if self.server:
             self.server.close()
 
         # star a new episode
@@ -410,20 +454,12 @@ class EnergyPlusSimulator(Simulator):
         except OSError as msg:
             print("EnergyPlusSimulator: error on restart:", msg)
             self.server = None
-        pass
-
 
     def reset(self):
-        print("EnergyPlusSimulator: reset")
-        """This method is called whenever the server resets the game. The server
-           resets the game at the beginning and the frame after
-           is_terminal==True
+        """Called by the AI Engine to reset simulator state in between training
+           and test passes.
         """
-
-        # No it doesn't. It appears to call reset after the first run has finished...
-
-        pass
-
+        print("EnergyPlusSimulator: reset")
 
     def advance(self, actions):
         print("EnergyPlusSimulator: advance ", actions)
@@ -432,9 +468,6 @@ class EnergyPlusSimulator(Simulator):
            schema in Inkling.
         """
         self.shade = actions['shade'] * 6.  # Int32[0..1]
-
-        pass
-
 
     def set_properties(self, **kwargs):
         print("EnergyPlusSimulator: set_properties")
@@ -445,25 +478,24 @@ class EnergyPlusSimulator(Simulator):
            this simulator's accompanying curriculums.
         """
         self.restartPtolemyServer()
-        pass
-
 
     def get_state(self):
-        print("EnergyPlusSimulator: get_state: terminal:", self.is_terminal)
-
         """Returns a named tuple of state and is_terminal. state is a
            dictionary matching the state schema as defined in Inkling.
            is_terminal is only true when the simulator is in a "game over"
            state.
         """
-        if self.is_terminal==True:
+
+        print("EnergyPlusSimulator: get_state: terminal:", self.is_terminal)
+
+        if self.is_terminal:
             self.restartPtolemyServer()
         else:
             self.server.writeToClient([self.shade])
             self.readFromPtolemyClient()
 
         # you like graphs? WE HAVE GRAPHS. SO MANY GRAPHS.
-        if self.is_terminal==True:
+        if self.is_terminal:
             graph = self.model.grapher()
             write_graph(graph)
 
@@ -472,16 +504,15 @@ class EnergyPlusSimulator(Simulator):
 
         return SimState(state=self.clientState, is_terminal=self.is_terminal)
 
-
     def reward_function(self):
         print("EnergyPlusSimulator: reward_function")
         # largest reward is best reward (maximize)
         reward = 0.
-        if self.model.fromClient!=None and len(self.model.fromClient)==4:
+        if self.model.fromClient and len(self.model.fromClient) == 4:
             # SolarIrradiation === Shades down === good
-            #TOut = self.model.fromClient[0]
+            # TOut = self.model.fromClient[0]
             SolarIrradiation = self.model.fromClient[2] / 100.
-            
+
             # sun is down
             if SolarIrradiation <= 1:
                 if self.shade > 0:
@@ -494,32 +525,32 @@ class EnergyPlusSimulator(Simulator):
                 if self.shade > 0: 
                     reward = 1  # shades on
                 else:
-                    reward = -1 # shades off
+                    reward = -1  # shades off
 
-            
             self.model.data[4].append(reward)
-        
+
         print("EnergyPlusSimulator reward:", reward)
         return reward
 
 
 if __name__ == "__main__":
-    #logging.basicConfig(level=logging.DEBUG)
 
     parser = argparse.ArgumentParser(description='Launch EnergyPlus simulator')
     parser.add_argument('--test_croom', action='store_true', default=False)
-    parser.add_argument('--test_energyplus', action='store_true', default=False)
+    parser.add_argument('--test_energyplus',
+                        action='store_true',
+                        default=False)
     parser.add_argument('--predict-brain')
     parser.add_argument('--train-brain')
     parser.add_argument('--predict-version')
     args = parser.parse_args()
 
-    # test the results from the model or from the AI
+    # Test the results from the model or from the AI
     if args.test_croom or args.test_energyplus:
-        if args.test_croom==True:
-            test_model( model=CRoom() )
-        elif args.test_energyplus==True:
-            test_model( model=ePlus85Actuator() )
-        
+        if args.test_croom:
+            test_model(model=CRoom())
+        elif args.test_energyplus:
+            test_model(model=ePlus85Actuator())
     else:
-        run_for_training_or_prediction(name="energyplus_simulator", simulator_or_generator=EnergyPlusSimulator())
+        run_for_training_or_prediction(name="energyplus_simulator",
+                                  simulator_or_generator=EnergyPlusSimulator())
