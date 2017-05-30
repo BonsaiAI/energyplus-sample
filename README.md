@@ -41,7 +41,7 @@ Download this energyplus-sample source code from Github and navigate into its fo
 If you haven't already created a BRAIN on beta.bons.ai, create one now via the Bonsai CLI with `bonsai create <your_brain>`.
 
 ### 3.2 Load Inkling
-Load the energyplus.ink Inkling file into your brain with `bonsai load`.
+Load the energyplus.ink Inkling file into your brain with `bonsai push`.
 
 ### 3.3 Enable Training Mode
 Enable training mode for your brain with `bonsai train start`.
