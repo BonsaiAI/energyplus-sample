@@ -19,15 +19,15 @@ from bonsai import Simulator, run_for_training_or_prediction
 from bonsai.simulator import SimState
 
 MAINVERSION = 2  # from defines.h
-host = "localhost"
+HOSTNAME = "localhost"
 port = 0
 
 
-def get_host():
+def get_host(hostname):
     if platform.system() == "Windows":
         return ""
     else:
-        return socket.gethostbyname(socket.gethostname())
+        return socket.gethostbyname(hostname)
 
 
 def check_environ_vars():
@@ -45,7 +45,7 @@ def get_bcvtb_path():
 
 def get_cclient_path():
     """ Get the path to the CCLIENT binary distributed with BCVTB. You can set
-        this as environment variable, BCVTB_CCLIENT_BIN, before running this 
+        this as environment variable, BCVTB_CCLIENT_BIN, before running this
         program.
     """
     if "BCVTB_CCLIENT_BIN" in os.environ:
@@ -92,12 +92,12 @@ class Model(object):
 
 
 class PtolemyServer(object):
-    hostname = get_host()
+    host = get_host(HOSTNAME)
 
     def __init__(self, model):
 
         # start parameters
-        self.server_address = (self.hostname, 0)  # get new random port number
+        self.server_address = (self.host, 0)  # get new random port number
         self.model = model
 
         # open and setup the socket
@@ -120,7 +120,7 @@ class PtolemyServer(object):
             " <ipc>\n"
             "    <socket port=\"{port}\" hostname=\"{hostname}\"/>\n"
             "  </ipc>\n"
-            "</BCVTB-client>\n").format(hostname=self.hostname, port=new_port)
+            "</BCVTB-client>\n").format(hostname=self.host, port=new_port)
 
         try:
             config_file = open("socket.cfg", "w")
@@ -227,7 +227,7 @@ class CRoom(Model):
         self.data = ([], [], [], [])
 
         # model variables from the the bcvtb example `c-room`
-        # Kp is originally represented as a matrix, but we don't need to do 
+        # Kp is originally represented as a matrix, but we don't need to do
         # that here
         self.Kp = [1., 7.5]
         self.TSet = [18., 20.]
@@ -271,7 +271,7 @@ class CRoom(Model):
                             name='10*y1')
         trace3 = go.Scatter(x=xAxis,
                             y=self.data[3],
-                            mode='lines', 
+                            mode='lines',
                             name='10*y2')
         return [trace0, trace1, trace2, trace3]
 
@@ -522,7 +522,7 @@ class EnergyPlusSimulator(Simulator):
 
             # sun is out
             else:
-                if self.shade > 0: 
+                if self.shade > 0:
                     reward = 1  # shades on
                 else:
                     reward = -1  # shades off
@@ -552,5 +552,6 @@ if __name__ == "__main__":
         elif args.test_energyplus:
             test_model(model=ePlus85Actuator())
     else:
-        run_for_training_or_prediction(name="energyplus_simulator",
-                                  simulator_or_generator=EnergyPlusSimulator())
+        run_for_training_or_prediction(
+            name="energyplus_simulator",
+            simulator_or_generator=EnergyPlusSimulator())

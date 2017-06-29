@@ -16,16 +16,30 @@ Download and install the correct version at https://simulationresearch.lbl.gov/b
 
 ### 1.4 Set Environment Variables
 
-Go to System -> Advanced system settings -> Environment Variables to set these in Windows, or use `export` in macOS or Linux to set these variables into your PATH.
+**Windows**
+
+Go to System -> Advanced system settings -> Environment Variables to set these in Windows.
 
 **Example Locations in Windows**
 
 | Variable       | Value                                      |
 | -------------- | ------------------------------------------ |
-| BCVTB_HOME     | The location of BCVTB (C:\bcvtb)           |
+| BCVTB_HOME     | C:\bcvtb                                   |
 | BCVTB_JNI_DIR  | C:\Program Files\Java\jdk1.8.0_121\include |
-| ENERGYPLUS_BIN | C:\EnergyPLusV8-5-0                        |
+| ENERGYPLUS_BIN | C:\EnergyPlusV8-5-0                        |
 | JAVA_HOME      | C:\Program Files\Java\jdk1.8.0_121\bin     |
+
+
+**macOS/Linux**
+
+Use `export` in macOS or Linux to set these variables into your PATH, making sure the locations are the same as where you installed to. You may wish copy and paste the following (example macOS locations) into your `.bash_profile` for future use.
+
+```
+export BCVTB_HOME=/Applications/bcvtb
+export BCVTB_JNI_DIR=/usr/bin/java/include
+export ENERGYPLUS_BIN=/Applications/EnergyPlus-8-5-0
+export JAVA_HOME=/usr/local/java
+```
 
 ### 1.5 Install the Bonsai CLI
 
