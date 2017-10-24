@@ -6,7 +6,7 @@ import subprocess
 import argparse
 
 import os
-from os.path import exists, join
+from os.path import join
 import platform
 
 # for graphing
