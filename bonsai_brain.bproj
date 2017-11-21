@@ -1,6 +1,14 @@
 {
     "files": [
-        "./"
+        "*.ink",
+        "*.py",
+        "run.*",
+        "ePlusWeather/*",
+        "cclient",
+        "EMS*.idf",
+        "variables.cfg",
+        "requirements.txt",
+        "README.md"
     ],
     "training": {
         "command": "python3 energyplus_simulator.py",
